@@ -1,6 +1,8 @@
 import re
 import requests
 from urlparse import urlparse, urljoin
+from bs4 import BeautifulSoup
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 # Thanks Django.
@@ -19,13 +21,20 @@ def get_chain(address):
     r = requests.get(address)
 
     chain = []
-    r.history = r.history[1:]
-    for i in r.history:
-        chain.append((i.url, i.status_code))
+    body = ''
 
-    chain.append((r.url, r.status_code))
+    if r.history:
 
-    return {'chain': chain, 'resonse_text': r.text}
+        chain.append(('', r.history[0].status_code))
+        r.history = r.history[1:]
+        for i in r.history:
+            chain.append((i.url, i.status_code))
+
+        chain.append(('', r.status_code))
+
+        body = str(BeautifulSoup(r.text).body)
+
+    return {'chain': chain, 'resonse_body': body}
 
 def get_bogus_address(address):
     # From an address, build one that looks similar.
@@ -48,26 +57,26 @@ def main(address):
     if not re.match(regex, address):
         return False
 
-    address_chain = get_chain(address).chain
-    print address_chain
+    chain_and_doc = get_chain(address)
+    print chain_and_doc['chain']
 
-    # get url. track number of redirects and responses.
-    # if we end up with a 404, a bad malformed url, or
-    # a slow or dead response, return false
+    bogus_address_chain_and_doc = get_chain(get_bogus_address(address))
+    print bogus_address_chain_and_doc['chain']
 
-    bogus_address_chain = get_chain(get_bogus_address(address)).chain
-    print bogus_address_chain
+    #print chain_and_doc['resonse_body']
+    #print bogus_address_chain_and_doc['resonse_body']
 
-    #if address_chain == bogus_address_chain:
-    #    print "It appears as if we've found a soft 404"
-    #    return
+    documents = (chain_and_doc['resonse_body'], bogus_address_chain_and_doc['resonse_body'])
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_matrix = tfidf_vectorizer.fit_transform(documents)
+    similarity_measure = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix)
+    print similarity_measure
 
-    #vect = TfidfVectorizer(min_df=1)
-    #tfidf = vect.fit_transform([address.content, bogus address.content])
-    #pairwise_similarity = tfidf * tfidf.T
-
+    if chain_and_doc == bogus_address_chain_and_doc and similarity_measure[0][1] > .95:
+        print 'It appears as if we have been served a soft 404'
 
 if __name__ == "__main__":
     #main('http://cyber.law.harvard.edu/asdfsv23adf/avdd4')
     #main('http://feedly.com/asdfsv23vs3adf/vsdsds')
-    main('http://ssnat.com/avsd/d')
+    main('http://engadget.com/asdfsv23vs3adf/vsdsds')
+    #main('http://ssnat.com/avsd/d')
